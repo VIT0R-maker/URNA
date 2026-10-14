@@ -1,0 +1,17 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const fs=require('node:fs');
+const code=fs.readFileSync(require('node:path').join(__dirname,'../public/app.js'),'utf8');
+function harness(page='vote',configured=true){
+ const map=new Map();const elements=new Map();
+ const get=s=>{if(!elements.has(s))elements.set(s,{innerHTML:'',textContent:'',dataset:{},querySelector:get,querySelectorAll:()=>[],append(){},setAttribute(){}});return elements.get(s);};
+ const storage={getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};
+ const ctx=vm.createContext({window:{URNA_CONFIG:{supabaseUrl:configured?'https://test.supabase.co':'',supabaseKey:configured?'public':'',school:'Escola',election:'Grêmio',candidates:[{id:'A',name:'Chapa A',image:'a.svg'},{id:'B',name:'Chapa B',image:'b.svg'}]}},document:{body:{dataset:{page}},querySelector:get,createElement:()=>get('new')},sessionStorage:storage,crypto:{randomUUID:()=> 'request-1'},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},AbortController,Date,console,fetch:()=>{throw Error('Unexpected fetch');}});
+ vm.runInContext(code,ctx);return{ctx,get,map,run:s=>vm.runInContext(s,ctx)};
+}
+test('missing configuration blocks login and voting',()=>{const h=harness('vote',false);assert.match(h.get('main').innerHTML,/ainda não foi ativada/);assert.doesNotMatch(h.get('main').innerHTML,/<form/);});
+test('entry page has requested message and no admin link',()=>{const h=harness();assert.match(h.get('main').innerHTML,/BOA TENTATIVA!/);assert.doesNotMatch(h.get('main').innerHTML,/encerrar.html/);});
+test('lost response preserves receipt; retry only finishes after acknowledgement',async()=>{const h=harness();h.run(`globalThis.calls=[];globalThis.fail=true;rpc=async (name,args)=>{calls.push(args);if(fail)throw Error('Resposta perdida');return {ok:true};};confirmVote('A');`);await h.get('#confirm').onclick();assert.equal(h.map.get('urna-pending'),JSON.stringify({choice:'A',id:'request-1'}));assert.doesNotMatch(h.get('main').innerHTML,/<h1>FIM/);assert.equal(h.get('#back').disabled,true);h.run('fail=false');await h.get('#confirm').onclick();assert.match(h.get('main').innerHTML,/<h1>FIM/);assert.equal(h.map.has('urna-pending'),false);assert.equal(h.run('calls[0].p_request_id'),h.run('calls[1].p_request_id'));});
+test('confirmation double click sends only one in-flight request',async()=>{const h=harness();h.run(`globalThis.count=0;rpc=()=>{count++;return new Promise(resolve=>{globalThis.ack=resolve;});};confirmVote('B');`);const first=h.get('#confirm').onclick();await h.get('#confirm').onclick();assert.equal(h.run('count'),1);h.run('ack({ok:true})');await first;});
+test('public open results omit candidate counts; closed zero votes avoid NaN',async()=>{const h=harness();h.run(`rpc=async()=>({status:'aberta',total:4,results:null});`);await h.run('results()');assert.match(h.get('main').innerHTML,/As escolhas ficam em sigilo/);assert.doesNotMatch(h.get('main').innerHTML,/Chapa A/);h.run(`rpc=async()=>({status:'encerrada',total:0,results:{A:0,B:0}});`);await h.run('results()');assert.match(h.get('main').innerHTML,/0%/);assert.doesNotMatch(h.get('main').innerHTML,/NaN|Infinity/);});
