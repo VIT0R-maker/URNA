@@ -11,7 +11,8 @@ Aplicativo web para **dois computadores supervisionados**, com votos consolidado
 - Oito segundos de intervalo também no servidor, independentemente da tela.
 - Recibo único por envio, persistido na aba até a confirmação, para repetir uma solicitação sem duplicar a contagem.
 - `apuracao.html`: total público enquanto aberta; votos e porcentagens por chapa apenas após encerramento.
-- `encerrar.html`: página sem link na urna, protegida por permissão administrativa. Abre, encerra e revoga terminais.
+- `encerrar.html`: página administrativa sem link na urna; abre, encerra e revoga terminais.
+- `Deletar_Apuracao.html`: rota administrativa sem botão/link na urna ou na apuração; exige sessão de administrador e confirmação explícita para apagar votos/recibos e reiniciar a eleição.
 - Encerramento definitivo e transacional: o banco serializa votos e encerramento, bloqueando votos posteriores.
 - Contadores por chapa sem identidade de aluno. Recibos não guardam a escolha. Tabelas internas não ficam acessíveis pela API pública.
 
@@ -22,7 +23,7 @@ Aplicativo web para **dois computadores supervisionados**, com votos consolidado
 1. Crie um projeto em https://supabase.com/dashboard. Guarde a senha do banco fora do GitHub.
 2. Abra o SQL Editor e execute **uma única vez**, em um projeto novo, todo o arquivo `supabase/schema.sql`.
 3. Em Authentication, desative o cadastro público de novos usuários. Não há cadastro na interface da urna.
-4. Em Authentication → Users, crie seu usuário com **e-mail e senha forte**, confirmado. Use um e-mail como login; não coloque a senha no campo login. Não envie a senha pelo chat nem grave no repositório.
+4. Em Authentication → Users, crie seu usuário administrativo com **e-mail e senha forte**, confirmado. O login do projeto atual usa Supabase Auth (e-mail e senha), não a senha isolada `S$enhaADM*`; não grave credenciais em arquivos públicos nem no repositório.
 5. Copie o UUID do usuário e execute no SQL Editor, substituindo o valor abaixo:
 
 ```sql
@@ -62,9 +63,10 @@ Páginas previstas após o deploy:
 | --- | --- |
 | Urna com login | `/URNA/` |
 | Apuração pública | `/URNA/apuracao.html` |
-| Administração sem link na urna | `/URNA/encerrar.html` |
+| Administração para finalizar | `/URNA/encerrar.html` |
+| Exclusão administrativa (digitar URL) | `/URNA/Deletar_Apuracao.html` |
 
-A URL administrativa pode ser descoberta no repositório público. **A proteção efetiva é a autenticação e a verificação do papel admin no servidor.**
+As URLs administrativas podem ser descobertas no repositório público. **A proteção efetiva é a autenticação e a verificação do papel admin no banco.** A rota de exclusão não aparece como botão ou link na urna nem na apuração. A exclusão deleta votos e recibos e redefine o estado para preparação; o administrador deve então abrir uma nova votação se desejar.
 
 ## 4. Operar no dia
 
@@ -81,7 +83,7 @@ A URL administrativa pode ser descoberta no repositório público. **A proteçã
 - **Falha no envio:** use “Verificar / tentar novamente” na mesma aba. O recibo é reutilizado. Não limpe o armazenamento nem troque de aba antes de resolver uma tentativa pendente. Uma resposta perdida não significa que o banco não contou o voto.
 - **Mais de dois terminais:** no painel, revogue os terminais. Nas urnas, feche as abas e abra novas abas para entrar novamente (o login é armazenado em sessionStorage). Isso bloqueia as sessões anteriores no banco.
 - **Conta sem permissão:** o usuário precisa constar em `election_private.operators`. Apenas estar cadastrado no Auth não concede acesso.
-- **Eleição encerrada:** não há reabertura ou exclusão de votos na interface. Uma próxima eleição requer um novo projeto/banco preparado, preservando o resultado anterior.
+- **Eleição encerrada:** não pode ser reaberta pela tela de encerramento. A rota `/URNA/Deletar_Apuracao.html` apaga irreversivelmente votos/recibos e reinicia a eleição; use somente após conferir que realmente deseja descartar os resultados.
 - **Sem internet:** o aplicativo não aceita votos offline. O fiscal deve pausar a fila.
 - A sessão expira conforme a configuração do Supabase e é renovada enquanto possível. Em caso de expiração definitiva com envio pendente, o administrador deve verificar o incidente antes de liberar outra tentativa.
 
@@ -105,7 +107,9 @@ Roteiro obrigatório no projeto de teste:
 - Repita o mesmo `p_request_id`: total não muda; novo ID antes de oito segundos é recusado.
 - Simule resposta perdida e tente de novo: um só voto deve ser contado.
 - Encerre enquanto outro PC tenta votar: nenhum voto pode ser aceito depois da transição no banco.
-- Após encerrar: percentuais corretos (inclusive 0 votos e empate); não é possível reabrir.
+- Após encerrar: percentuais corretos (inclusive 0 votos e empate); somente a exclusão administrativa explícita redefine o estado e apaga os votos.
 - Confirme imagem, som e legibilidade nos dois navegadores reais.
 
-Esta é uma urna escolar supervisionada. A senha protege o acesso remoto; o fiscal e a lista de participação controlam um voto por aluno. Não é um sistema de identificação de eleitores ou uma urna eleitoral certificada.
+A rota `Deletar_Apuracao.html` é deliberadamente omitida da navegação pública. Para uso real, configure um ambiente de teste e valide a exclusão; ela é destrutiva e não recuperável. O código atual protege ações pelo usuário admin do Supabase e **não configura automaticamente a senha isolada `S$enhaADM*`**; isso exigiria autenticação backend separada e configuração privada, que não foi disponibilizada.
+
+Esta é uma urna escolar supervisionada. A conta administrativa protege o acesso remoto; o fiscal e a lista de participação controlam um voto por aluno. Não é um sistema de identificação de eleitores ou uma urna eleitoral certificada.
