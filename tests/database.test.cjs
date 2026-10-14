@@ -41,7 +41,14 @@ test('database enforces access, idempotency, cooldown, two terminals and final c
  assert.equal((await call('cast_vote',['A',r1])).repeated,true);
  await assert.rejects(call('manage_election',['open']),/Ação inválida/);
  await identity(null,null,'anon');const closed=await call('public_results');assert.equal(closed.status,'encerrada');assert.deepEqual(closed.results,{A:1,B:1});
- await identity(admin,s1);await call('manage_election',['revoke']);
+ await assert.rejects(call('manage_election',['delete_apuracao']),/permission denied/);
+ await identity(terminal,s2);await assert.rejects(call('manage_election',['delete_apuracao']),/Somente o administrador/);
+ await identity(admin,s1);await call('manage_election',['delete_apuracao']);
+ const reset=await call('public_results');assert.equal(reset.status,'preparacao');assert.equal(reset.total,0);assert.equal(reset.results,null);
+ await db.exec('reset role');
+ assert.equal((await db.query('select count(*)::int as n from election_private.receipts')).rows[0].n,0);
+ await identity(admin,s1);
+ await call('manage_election',['revoke']);
  await assert.rejects(call('cast_vote',['A',r1]),/Terminal não autorizado/);
  }finally{await db.close();}
 });

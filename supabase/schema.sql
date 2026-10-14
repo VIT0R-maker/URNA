@@ -85,6 +85,11 @@ begin
  if p_action='open' and st='preparacao' then update election_private.election set status='aberta' where id=1;
  elsif p_action='close' and st='aberta' then update election_private.election set status='encerrada',closed_at=clock_timestamp() where id=1;
  elsif p_action='revoke' then update election_private.terminals set enabled=false;
+ elsif p_action='delete_apuracao' and st in ('preparacao','aberta','encerrada') then
+   delete from election_private.receipts;
+   update election_private.totals set votes=0;
+   update election_private.terminals set last_vote=null;
+   update election_private.election set status='preparacao',closed_at=null where id=1;
  else raise exception 'Ação inválida para o estado atual. Não é possível reabrir uma eleição encerrada.';
  end if;
  return public.public_results();
